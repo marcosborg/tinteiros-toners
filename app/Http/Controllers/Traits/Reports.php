@@ -20,6 +20,7 @@ use App\Models\CompanyPark;
 use App\Models\Consultancy;
 use App\Models\Company;
 use App\Models\CompanyData;
+use App\Models\TollPayment;
 
 trait Reports
 {
@@ -36,6 +37,7 @@ trait Reports
                 'contract_vat',
                 'card',
                 'electric',
+                'tool_card'
             ]);
 
         $total_uber = [];
@@ -44,6 +46,7 @@ trait Reports
         $total_earnings_after_discount = [];
         $total_tips_after_discount = [];
         $total_fuel_transactions = [];
+        $total_tolls = [];
         $total_adjustments = [];
         $total_fleet_management = [];
         $total_drivers = [];
@@ -163,6 +166,16 @@ trait Reports
 
             $total_fuel_transactions[] = $fuel_transactions;
 
+            //TOLLS
+            if ($driver->tool_card) {
+                $tolls = TollPayment::where([
+                    'tvde_week_id' => $tvde_week_id,
+                    'card' => $driver->tool_card->code
+                ])->sum('total');
+            } else {
+                $tolls = 0;
+            }
+
             //ADJUSTMENTS
             $adjustments = Adjustment::whereHas('drivers', function ($query) use ($driver) {
                 $query->where('id', $driver->id);
@@ -250,6 +263,7 @@ trait Reports
                 'private' => $private,
                 'total' => $total_earnings,
                 'total_tips' => $total_tips,
+                'tolls' => $tolls,
                 'percent' => $contract_type_rank->percent ?? 0,
                 'tips_percent' => $driver->contract_vat->tips,
                 'total_no_tips' => $total_earnings_no_tips,
@@ -267,7 +281,7 @@ trait Reports
             $driver_balance = DriversBalance::where('driver_id', $driver->id)->orderBy('id', 'desc')->first();
             $driver->balance = $driver_balance ? $driver_balance->drivers_balance : 0;
 
-            $driver->total = $earnings_after_discount + $tips_after_discount - $fuel_transactions + $adjustments - $fleet_management;
+            $driver->total = $earnings_after_discount + $tips_after_discount - $fuel_transactions - $tolls + $adjustments - $fleet_management;
 
             $total_uber[] = $uber_total_earnings;
             $total_bolt[] = $bolt_total_earnings;
@@ -277,6 +291,7 @@ trait Reports
             $total_tips_after_discount[] = $tips_after_discount;
             $total_drivers[] = $driver->total;
             $total_average[] = $average;
+            $total_tolls[] = $tolls;
 
             $current_account = CurrentAccount::where([
                 'tvde_week_id' => $tvde_week_id,
@@ -298,6 +313,7 @@ trait Reports
             'total_earnings_after_discount' => array_sum($total_earnings_after_discount),
             'total_tips_after_discount' => array_sum($total_tips_after_discount),
             'total_fuel_transactions' => array_sum($total_fuel_transactions),
+            'total_tolls' => array_sum($total_tolls),
             'total_adjustments' => array_sum($total_adjustments),
             'total_fleet_management' => array_sum($total_fleet_management),
             'total_drivers' => array_sum($total_drivers),
@@ -483,6 +499,18 @@ trait Reports
                 $combustion_racio = 0;
             }
         }
+
+        //TOLLS
+        if ($driver->tool_card) {
+            $tolls = TollPayment::where([
+                'tvde_week_id' => $tvde_week_id,
+                'card' => $driver->tool_card->code
+            ])->sum('total');
+        } else {
+            $tolls = 0;
+        }
+
+        $final_total = $final_total - $tolls;
 
         if ($driver && $driver->contract_vat->percent && $driver->contract_vat->percent > 0) {
             $txt_admin = ($final_total * $driver->contract_vat->percent) / 100;
